@@ -7,18 +7,18 @@ from langchain.tools.render import render_text_description
 
 from langchain.agents.output_parsers import ReActSingleInputOutputParser
 from langchain.agents.format_scratchpad import format_log_to_str
-# from callbacks import AgentCallbackHandler
+from callbacks import AgentCallbackHandler
 
 # LLMに関するライブラリ
-# from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI
 # from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_ollama import ChatOllama
+# from langchain_ollama import ChatOllama
 
 # 環境変数に関するライブラリ
-# from dotenv import load_dotenv
-# import os
-#### APIキーの取得
-# load_dotenv()
+from dotenv import load_dotenv
+import os
+### APIキーの取得
+load_dotenv()
 
 @tool
 def get_text_length(text: str) -> int:
@@ -46,55 +46,77 @@ def find_tool_by_name(tools: List[Tool], tool_name: str) -> Tool:
 if __name__ == "__main__":
     # =====各種設定=====
     # api_key = os.enviton['OPENAI_API_KEY']
-    # api_key = os.environ['GEMINI_API_KEY']
+    api_key = os.environ['GEMINI_API_KEY']
 
     #### LLMの初期設定
-    # llm = ChatOpenAI(temperature=0, model_name="gpt-.5-turbo")
-    # llm = ChatGoogleGenerativeAI(api_key=api_key, temperature=0, model="gemini-1.5-flash",max_output_tokens=20)
-    llm = ChatOllama(
-        model="llama3",
-        stop=["\nObservation", "Observation"],
-        # callbacks=[AgentCallbackHandler()]
+    llm = AzureChatOpenAI(
+        azure_deployment="gpt-4o",  # or your deployment
+        api_version="2024-08-01-preview",
+        model='gpt-4o',
+        callbacks = [AgentCallbackHandler()],
+        stop = ["\nObservation", "Observation"],
     )
+    # llm = ChatGoogleGenerativeAI(api_key=api_key, 
+    #                              model="gemini-2.0-flash", 
+    #                              callbacks = [AgentCallbackHandler()],
+                                 
+    #                              )
+    # llm = ChatOllama(
+    #     model="llama3",
+    #     stop=["\nObservation", "Observation"],
+    #     # callbacks=[AgentCallbackHandler()]
+    # )
+    
+    
+    question = "What is the length of the word: DOG"
+    tools = [get_text_length]
 
 
     # =====STEP1: プロンプトのテンプレート作成と処理=====
-    tools = [get_text_length]
 
     template = """
-    以下の質問にできる限り答えてください。利用可能なツールは次の通りです：
+    Answer the following questions as best you can. You have access to the following tools:
 
     {tools}
 
-    次の形式を使用してください：
+    Use the following format:
 
-    質問: あなたが答えるべき入力質問 
-    考え: 何をすべきかを常に考える 
-    アクション: 取るべきアクション、次の中の1つ [{tool_names}] 
-    アクション入力: アクションへの入力 
-    観察: アクションの結果 ...（この「考え」「アクション」「アクション入力」「観察」がN回繰り返されることがあります） 
-    考え: 最終的な答えが分かった 
+    Question: the input question you must answer
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [{tool_names}]
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the final answer
+    Final Answer: the final answer to the original input question
 
-    最終的な答え: 元の入力質問に対する最終的な答え
+    Begin!
 
-    始めましょう！
-
-    質問: {input}  
-    考え: {agent_scratchpad}
+    Question: {input}
+    Thought:{agent_scratchpad}
     """
+    
+    # LLMに渡すツールの情報を取得
+    tool_descriotion = render_text_description(tools)
+    print(f"ツールの説明:\n {tool_descriotion}")
+    
+    tool_names = ", ".join([t.name for t in tools])
+    print(f"ツールの名前:\n {tool_names}")
 
     prompt = PromptTemplate.from_template(template=template).partial(
-        tools=render_text_description(tools),
-        tool_names=", ".join([t.name for t in tools]),
+        tools=tool_descriotion,
+        tool_names=tool_names,
     )
+    
     FilledPrompt = prompt.format(
-        input="What is the length of the word: DOG",
+        input=question,
         agent_scratchpad=[],
     )
 
-    print(f"STEP1 LLMに対するプロンプト: {FilledPrompt}")
+    # print(f"STEP1 LLMに対するプロンプト: {FilledPrompt}")
 
-    # =====STEP2: LLMに投げて結果を得る=====
+    
+    
     intermediate_steps = []
     agent = (
         {
@@ -106,29 +128,48 @@ if __name__ == "__main__":
         | ReActSingleInputOutputParser()
     )
 
-    # # res = agent.invoke({"input":"What is the length of 'DOG' in characters"})
-    # # print(res)
+    # res = agent.invoke({"input":"What is the length of 'DOG' in characters"})
+    # print(res)
 
-    # ## ReAct Agent Loop
-    # agent_step = ""
-    # while not isinstance(agent_step, AgentFinish):
-    #     agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
-    #         {
-    #             "input": "What is the length of the word: DOG",
-    #             "agent_scratchpad": intermediate_steps,
-    #         }
-    #     )
-    #     print(agent_step)
+    # ReAct Agent Loop
+    agent_step = None  # Initialize with None instead of empty string
+    while not isinstance(agent_step, AgentFinish):
+        agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
+            {
+                "input": "What is the length of the word: DOG",
+                "agent_scratchpad": intermediate_steps,
+            }
+        )
+        
+        # エージェントステップの詳細表示を改善
+        print("\n" + "="*50)
+        print("🤖 エージェントの動作:")
+        print("="*50)
+        
+        if isinstance(agent_step, AgentAction):
+            print(f"📋 アクションタイプ: {type(agent_step).__name__}")
+            print(f"🔧 使用ツール: {agent_step.tool}")
+            print(f"📥 ツール入力: {agent_step.tool_input}")
+            print(f"📝 ログ: \n{agent_step.log}")
+            
+            # ツールを実行
+            tool_name = agent_step.tool
+            tool_to_use = find_tool_by_name(tools, tool_name)
+            tool_input = agent_step.tool_input
 
-    #     if isinstance(agent_step, AgentAction):
-    #         tool_name = agent_step.tool
-    #         tool_to_use = find_tool_by_name(tools, tool_name)
-    #         tool_input = agent_step.tool_input
-
-    #         observation = tool_to_use.func(str(tool_input))
-    #         print(f"{observation=}")
-    #         intermediate_steps.append((agent_step, str(observation)))
-    
-    # if isinstance(agent_step, AgentFinish):
-    #     print("### AgentFinish ###")
-    #     print(agent_step.return_values)
+            print("\n" + "-"*30)
+            print("🛠️ ツール実行中...")
+            observation = tool_to_use.func(str(tool_input))
+            print(f"📤 結果: {observation}")
+            print("-"*30 + "\n")
+            
+            intermediate_steps.append((agent_step, str(observation)))
+        
+        elif isinstance(agent_step, AgentFinish):
+            print(f"📋 アクションタイプ: {type(agent_step).__name__}")
+            print(f"🏁 最終回答: {agent_step.return_values['output']}")
+            print(f"📝 ログ: \n{agent_step.log}")
+            print("="*50)
+            print("### エージェント処理完了 ###")
+        else:
+            print(f"❓ 未知のアクションタイプ: {type(agent_step)}")
