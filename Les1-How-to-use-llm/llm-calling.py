@@ -4,7 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 # LLMに関するライブラリ
 # from langchain_openai import ChatOpenAI
-# from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 
 # 環境変数に関するライブラリ
